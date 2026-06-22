@@ -1,0 +1,41 @@
+package service
+
+import (
+	"context"
+	"golang.org/x/crypto/bcrypt"
+	"user-service/internal/models"
+	"user-service/internal/repository"
+)
+
+
+type UserService struct {
+	repo *repository.UserRepository
+}
+
+func NewUserService(repo *repository.UserRepository) *UserService {
+	return &UserService{
+		repo: repo,
+	}
+}
+
+func (s *UserService) Register(ctx context.Context, user *models.User) (string, error) {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	user.Password = string(hashedPassword)
+
+	return s.repo.CreateUser(ctx, user)
+}
+
+func (s *UserService) GetUserByID(ctx context.Context, id string) (*models.User, error) {
+	return s.repo.GetUserByID(ctx, id)
+}
+
+func (s *UserService) UpdateUser(ctx context.Context, user *models.User) error {
+	return s.repo.UpdateUser(ctx, user)
+}
+
+func (s *UserService) DeleteUser(ctx context.Context, id string) error {
+	return s.repo.DeleteUser(ctx, id)
+}

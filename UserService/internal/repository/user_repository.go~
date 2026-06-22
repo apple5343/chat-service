@@ -1,0 +1,101 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+
+	"github.com/jmoiron/sqlx"
+	"user-service/internal/models"
+)
+
+var (
+	ErrUserNotFound = errors.New("user not found")
+)
+
+type UserRepository struct {
+	db *sqlx.DB
+}
+
+func NewUserRepository(db *sqlx.DB) *UserRepository {
+	return &UserRepository{db: db}
+}
+
+func (r *UserRepository) CreateUser(ctx context.Context, user *models.User) (string, error) {
+	query :=
+		`INSERT INTO users (email, password_hash, grade)
+	VALUES ($1, $2, $3)
+	RETURNING id_uuid`
+
+	var userID string
+	err := r.db.QueryRowContext(ctx, query, user.Email, user.Password, user.Grade).Scan(&userID)
+	if err != nil {
+		return "", err
+	}
+	return userID, nil
+}
+
+// GetUserByID получает пользователя по его ID.
+func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*models.User, error) {
+	query :=
+		`SELECT id_uuid AS id, email, password_hash AS password, grade
+	FROM users
+	WHERE id_uuid = $1`
+
+
+	var user models.User
+	err := r.db.GetContext(ctx, &user, query, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+// UpdateUser обновляет данные пользователя.
+func (r *UserRepository) UpdateUser(ctx context.Context, user *models.User) error {
+	query :=
+		`UPDATE users
+	SET email = $1, password_hash = $2, grade = $3
+	WHERE id_uuid = $4`
+
+
+	result, err := r.db.ExecContext(ctx, query, user.Email, user.Password, user.Grade, user.ID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// DeleteUser удаляет пользователя по его ID.
+func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
+	query :=
+		`DELETE FROM users
+	WHERE id_uuid = $1`
+
+
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrUserNotFound
+	}
+
+	return nil
+}

@@ -1,0 +1,33 @@
+package task
+
+import (
+	"context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	pb "project-service/pkg/api/task_v1"
+)
+
+func (s *TaskServer) GetTasksByProjectID(ctx context.Context, req *pb.GetTasksByProjectIDRequest) (*pb.GetTasksByProjectIDResponse, error) {
+	tasks, err := s.taskService.GetTasksByProjectID(ctx, req.ProjectId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to retrieve tasks: %v", err)
+	}
+
+	var taskResponses []*pb.Task
+	for _, task := range tasks {
+		taskResponses = append(taskResponses, &pb.Task{
+			Id:          task.Id,
+			Title:       task.Title,
+			Description: task.Description,
+			Status:      task.Status,
+			ProjectId:   task.ProjectId,
+			ExecutorId:  task.ExecutorId,
+			Deadline:    timestamppb.New(task.Deadline),
+			CreatedAt:   timestamppb.New(task.CreatedAt),
+			UpdatedAt:   timestamppb.New(task.UpdatedAt),
+		})
+	}
+
+	return &pb.GetTasksByProjectIDResponse{Tasks: taskResponses}, nil
+}

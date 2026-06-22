@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package project_v1;
+
+option go_package = "project_service/pkg/project_v1;project_v1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+service ProjectService {
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {}
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {}
+  rpc ListUserProjects(google.protobuf.Empty) returns (ListUserProjectsResponse) {}
+  rpc UpdateProject(UpdateProjectRequest) returns (google.protobuf.Empty) {}
+  rpc AddUser(AddUserRequest) returns (google.protobuf.Empty) {}
+  rpc DeleteProject(DeleteProjectRequest) returns (google.protobuf.Empty) {}
+  rpc SubscribeOnProjectNotifications(SubscribeOnProjectNotificationsRequest) returns (SubscribeOnProjectNotificationsResponse) {}
+}
+
+message Project {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  repeated string users = 4;
+  string admin_id = 5;
+  repeated int64 notification_subscribers_tg_ids = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message CreateProjectRequest {
+  string title = 1;
+  string description = 2;
+  repeated string users = 3;
+}
+
+message CreateProjectResponse {
+  string id = 1;
+}
+
+message GetProjectRequest {
+  string id = 1;
+}
+
+message GetProjectResponse {
+  Project project = 1;
+}
+
+message ListUserProjectsResponse {
+  repeated Project project = 1;
+}
+
+message UpdateProjectRequest {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string admin_id = 4;
+}
+
+message AddUserRequest {
+  string projectID = 1;
+  string userID = 2;
+}
+
+message DeleteProjectRequest {
+  string id = 1;
+}
+
+message SubscribeOnProjectNotificationsRequest {
+  string projectID = 1;
+  int64 telegramID = 2;
+}
+
+message SubscribeOnProjectNotificationsResponse {
+  string msg = 1;
+}

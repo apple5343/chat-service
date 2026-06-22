@@ -1,0 +1,10 @@
+package task
+
+import (
+	"context"
+	"project-service/internal/models"
+)
+
+func (s *ServiceTask) GetTaskByID(ctx context.Context, id string) (*models.Task, error) {
+	return s.taskRepo.GetTaskByID(ctx, id)
+}

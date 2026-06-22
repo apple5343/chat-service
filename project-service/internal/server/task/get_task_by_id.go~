@@ -1,0 +1,29 @@
+package task
+
+import (
+	"context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	pb "project-service/pkg/api/task_v1"
+)
+
+func (s *TaskServer) GetTaskByID(ctx context.Context, req *pb.GetTaskByIDRequest) (*pb.GetTaskByIDResponse, error) {
+	task, err := s.taskService.GetTaskByID(ctx, req.Id)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "task not found: %v", err)
+	}
+
+	return &pb.GetTaskByIDResponse{Task: &pb.Task{
+		Id:          task.Id,
+		Title:       task.Title,
+		Description: task.Description,
+		Status:      task.Status,
+		ProjectId:   task.ProjectId,
+		ExecutorId:  task.ExecutorId,
+		Deadline:    timestamppb.New(task.Deadline),
+		CreatedAt:   timestamppb.New(task.CreatedAt),
+		UpdatedAt:   timestamppb.New(task.UpdatedAt),
+	}}, nil
+}

@@ -1,0 +1,206 @@
+version: '3.8'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    restart: always
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - taskly
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: always
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    networks:
+      - taskly
+
+  user_service_database:
+    container_name: user_service_database
+    restart: always
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=${USER_SERVICE_PG_USER}
+      - POSTGRES_PASSWORD=${USER_SERVICE_PG_PASS}
+      - POSTGRES_DB=${USER_SERVICE_PG_DB}
+    image: postgres:16.2-alpine3.19
+    networks:
+      - taskly
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -h ${USER_SERVICE_PG_HOST} -p 5432 -U ${USER_SERVICE_PG_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  user_service_migrate:
+    image: migrate/migrate:v4.16.2
+    volumes:
+      - ./UserService/migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgres://${USER_SERVICE_PG_USER}:${USER_SERVICE_PG_PASS}@${USER_SERVICE_PG_HOST}:${USER_SERVICE_PG_PORT_INTERNAL}/${USER_SERVICE_PG_DB}?sslmode=disable", "up"]
+    depends_on:
+      user_service_database:
+        condition: service_healthy
+    env_file:
+      - ./example.env
+    networks:
+      - taskly
+
+  project_service_database:
+    container_name: project_service_database
+    restart: always
+    ports:
+      - "5434:5432"
+    environment:
+      - POSTGRES_USER=${PROJECT_SERVICE_PG_USER}
+      - POSTGRES_PASSWORD=${PROJECT_SERVICE_PG_PASS}
+      - POSTGRES_DB=${PROJECT_SERVICE_PG_DB}
+    image: postgres:16.2-alpine3.19
+    networks:
+      - taskly
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -h ${PROJECT_SERVICE_PG_HOST} -p 5432 -U ${PROJECT_SERVICE_PG_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  project_service_migrate:
+    image: migrate/migrate:v4.16.2
+    volumes:
+      - ./project-service/migrations:/migrations
+    command: ["-path" , "/migrations", "-database", "postgres://${PROJECT_SERVICE_PG_USER}:${PROJECT_SERVICE_PG_PASS}@${PROJECT_SERVICE_PG_HOST}:${PROJECT_SERVICE_PG_PORT_INTERNAL}/${PROJECT_SERVICE_PG_DB}?sslmode=disable", "up"]
+    depends_on:
+      project_service_database:
+        condition: service_healthy
+    env_file:
+      - ./example.env
+    networks:
+      - taskly
+
+  redis:
+    container_name: redis
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - taskly
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  mongo:
+    container_name: mongo
+    image: mongo:latest
+    restart: always
+    ports:
+      - "27017:27017"
+    networks:
+      - taskly
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+
+
+  user_service:
+    container_name: user_service
+    build:
+      context: ./UserService
+      dockerfile: ./Dockerfile
+    restart: on-failure
+    networks:
+      - taskly
+    depends_on:
+      - user_service_database
+    env_file:
+      - ./UserService/example.env
+
+  project_service:
+    container_name: project_service
+    build:
+      context: ./project-service
+      dockerfile: ./Dockerfile
+    restart: on-failure
+    networks:
+      - taskly
+    depends_on:
+      - kafka
+      - project_service_database
+    env_file:
+      - ./project-service/example.env
+
+  # notification_service:
+  #   container_name: notification_service
+  #   image: notification-service:latest
+  #   restart: on-failure
+  #   networks:
+  #     - taskly
+  #   depends_on:
+  #     - kafka
+  #   env_file:
+  #     - ./notification-service/.env
+
+  api_gateway:
+    container_name: api_gateway
+    build:
+      context: ./api-gateway
+      dockerfile: ./Dockerfile
+    restart: on-failure
+    ports:
+      - "8090:8090"
+    networks:
+      - taskly
+    depends_on:
+      - user_service
+      - project_service
+      - chat_service
+    env_file:
+      - ./api-gateway/example.env
+  
+  chat_service:
+    container_name: chat_service
+    build:
+      context: ./chat-service
+      dockerfile: ./Dockerfile
+    restart: on-failure
+    networks:
+      - taskly
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    env_file:
+      - ./chat-service/example.env
+      # MONGODB_URI=mongodb://mongo:27017
+      # REDIS_ADDR=redis:6379
+      # STREAM_NAME=chat-stream
+      # GROUP_NAME=chat-group
+      # CONSUMER_NAME=chat-consumer
+      # PUBLISH_CHANNEL=chat-channel
+      # GRPC_PORT=50050
+  
+
+    
+
+networks:
+  taskly:
+    driver: bridge
+
+
+

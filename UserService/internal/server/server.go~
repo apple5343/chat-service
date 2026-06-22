@@ -1,0 +1,97 @@
+package server
+
+import (
+	"context"
+	"google.golang.org/grpc"
+	"log"
+	"net"
+	"user-service/internal/models"
+	"user-service/internal/service"
+	"user-service/pkg/user_service/v1"
+)
+
+type Server struct {
+	user_service.UnimplementedUserServiceServer // Встраиваем unimplemented сервер для удобства расширения
+	userService                                 *service.UserService
+}
+
+func NewServer(userService *service.UserService) *Server {
+	return &Server{
+		userService: userService,
+	}
+}
+
+func (s *Server) Register(ctx context.Context, req *user_service.RegisterRequest) (*user_service.RegisterResponse, error) {
+	// Логика регистрации пользователя
+	user := &models.User{
+		Email:    req.GetEmail(),
+		Password: req.GetPassword(),
+		Grade:    req.GetGrade(),
+	}
+
+	userID, err := s.userService.Register(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user_service.RegisterResponse{
+		Id: userID,
+	}, nil
+}
+
+func (s *Server) GetUser(ctx context.Context, req *user_service.GetUserRequest) (*user_service.GetUserResponse, error) {
+	// Логика получения пользователя
+	user, err := s.userService.GetUserByID(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	return &user_service.GetUserResponse{
+		User: &user_service.User{
+			Id:    user.ID,
+			Email: user.Email,
+			Grade: user.Grade,
+		},
+	}, nil
+}
+
+func (s *Server) UpdateUser(ctx context.Context, req *user_service.User) (*user_service.User, error) {
+	// Логика обновления пользователя
+	user := &models.User{
+		ID:       req.GetId(),
+		Email:    req.GetEmail(),
+		Password: req.GetPassword(),
+		Grade:    req.GetGrade(),
+	}
+
+	err := s.userService.UpdateUser(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+func (s *Server) DeleteUser(ctx context.Context, req *user_service.GetUserRequest) (*user_service.Empty, error) {
+	// Логика удаления пользователя
+	err := s.userService.DeleteUser(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	return &user_service.Empty{}, nil
+}
+
+func (s *Server) StartServer(grpcPort string) error {
+	// Запуск gRPC сервера
+	lis, err := net.Listen("tcp", grpcPort)
+	if err != nil {
+		return err
+	}
+
+	grpcServer := grpc.NewServer()
+	user_service.RegisterUserServiceServer(grpcServer, s)
+
+	log.Printf("gRPC server listening at %v", grpcPort)
+	return grpcServer.Serve(lis)
+}
