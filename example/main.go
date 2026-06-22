@@ -209,7 +209,7 @@ func main() {
 		fmt.Printf("\t Access Token: %s\n\n", accessTokens[i])
 	}
 
-	fmt.Printf("\nProjects (%d):\n", len(users))
+	fmt.Printf("\nProjects (%d):\n", 2)
 
 	fmt.Printf("\t ID: %s\n", project1ID)
 	fmt.Printf("\t Admin: user1\n")
