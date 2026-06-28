@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"context"
 	"testing"
 
 	api "chat-service/pkg/api/chat_v1"
@@ -12,17 +13,19 @@ import (
 )
 
 func TestCreateChatHappyPath(t *testing.T) {
-	ctx, st := grpc.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	client := grpc.NewClient(t)
 	req := api.CreateChatRequest{
 		ProjectId: gofakeit.UUID(),
 		Name:      gofakeit.Name(),
 		Member:    []string{gofakeit.UUID()},
 	}
 
-	_, err := st.Client.CreateChat(ctx, &req)
+	_, err := client.CreateChat(ctx, &req)
 	require.NoError(t, err)
 
-	resp, err := st.Client.GetChat(ctx, &api.GetChatRequest{
+	resp, err := client.GetChat(ctx, &api.GetChatRequest{
 		ProjectId: req.ProjectId,
 	})
 	require.NoError(t, err)
@@ -34,8 +37,10 @@ func TestCreateChatHappyPath(t *testing.T) {
 }
 
 func TestCreateChatBadRequest(t *testing.T) {
-	ctx, st := grpc.New(t)
-	_, err := st.Client.CreateChat(ctx, &api.CreateChatRequest{})
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	client := grpc.NewClient(t)
+	_, err := client.CreateChat(ctx, &api.CreateChatRequest{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "rpc error: code = InvalidArgument desc = bad request")
 }

@@ -5,6 +5,7 @@ import (
 	api "chat-service/pkg/api/chat_v1"
 	"chat-service/test/integration/grpc"
 	"chat-service/test/integration/redis"
+	"context"
 	"testing"
 	"time"
 
@@ -21,8 +22,10 @@ const (
 )
 
 func TestSendMessagesHappyPath(t *testing.T) {
-	ctx, rdb := redis.New(t)
-	ctx, st := grpc.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	grpcClient := grpc.NewClient(t)
+	redisClient := redis.NewClient(t)
 
 	createChatRequest := api.CreateChatRequest{
 		ProjectId: gofakeit.UUID(),
@@ -30,11 +33,11 @@ func TestSendMessagesHappyPath(t *testing.T) {
 		Member:    []string{},
 	}
 
-	_, err := st.Client.CreateChat(ctx, &createChatRequest)
+	_, err := grpcClient.CreateChat(ctx, &createChatRequest)
 	require.NoError(t, err)
 
 	userId := gofakeit.UUID()
-	_, err = st.Client.AddUserToChat(ctx, &api.AddUserToChatRequest{
+	_, err = grpcClient.AddUserToChat(ctx, &api.AddUserToChatRequest{
 		ProjectId: createChatRequest.GetProjectId(),
 		UserId:    userId,
 	})
@@ -48,12 +51,12 @@ func TestSendMessagesHappyPath(t *testing.T) {
 			Content:   gofakeit.Word(),
 		}
 		messages = append(messages, msg)
-		err := rdb.SendMessage(ctx, msg)
+		err := redisClient.SendMessage(ctx, msg)
 		time.Sleep(sendMessageTimeout)
 		require.NoError(t, err)
 	}
 	time.Sleep(readMessageTimeout)
-	resp, err := st.Client.GetMessages(ctx, &api.GetMessagesRequest{
+	resp, err := grpcClient.GetMessages(ctx, &api.GetMessagesRequest{
 		UserId:    userId,
 		ProjectId: createChatRequest.GetProjectId(),
 		Limit:     10,
@@ -70,44 +73,44 @@ func TestSendMessagesHappyPath(t *testing.T) {
 }
 
 func TestSendMessagesIncorrectUser(t *testing.T) {
-	ctx, st := grpc.New(t)
-	ctx, rdb := redis.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+	grpcClient := grpc.NewClient(t)
+	redisClient := redis.NewClient(t)
+
 	createChatRequest := api.CreateChatRequest{
 		ProjectId: gofakeit.UUID(),
 		Name:      gofakeit.Name(),
 		Member:    []string{},
 	}
 
-	_, err := st.Client.CreateChat(ctx, &createChatRequest)
+	_, err := grpcClient.CreateChat(ctx, &createChatRequest)
 	require.NoError(t, err)
-
 	userIdFake := gofakeit.UUID()
 	userId := gofakeit.UUID()
 
-	_, err = st.Client.AddUserToChat(ctx, &api.AddUserToChatRequest{
+	_, err = grpcClient.AddUserToChat(ctx, &api.AddUserToChatRequest{
 		ProjectId: createChatRequest.GetProjectId(),
 		UserId:    userId,
 	})
 	require.NoError(t, err)
-
+	//
 	msg := &entity.Message{
 		ProjectID: createChatRequest.GetProjectId(),
 		UserID:    userId,
 		Content:   gofakeit.Word(),
 	}
-	err = rdb.SendMessage(ctx, msg)
+	err = redisClient.SendMessage(ctx, msg)
 	require.NoError(t, err)
-	time.Sleep(readMessageTimeout * time.Second)
-
+	time.Sleep(readMessageTimeout)
 	msgFake := &entity.Message{
 		ProjectID: createChatRequest.GetProjectId(),
 		UserID:    userIdFake,
 		Content:   gofakeit.Word(),
 	}
-	err = rdb.SendMessage(ctx, msgFake)
+	err = redisClient.SendMessage(ctx, msgFake)
 	require.NoError(t, err)
-
-	resp, err := st.Client.GetMessages(ctx, &api.GetMessagesRequest{
+	resp, err := grpcClient.GetMessages(ctx, &api.GetMessagesRequest{
 		UserId:    userId,
 		ProjectId: createChatRequest.GetProjectId(),
 		Limit:     10,
@@ -119,7 +122,7 @@ func TestSendMessagesIncorrectUser(t *testing.T) {
 	assert.Equal(t, msg.UserID, resp.Messages[0].UserId)
 	assert.Equal(t, msg.Content, resp.Messages[0].Content)
 
-	resp, err = st.Client.GetMessages(ctx, &api.GetMessagesRequest{
+	resp, err = grpcClient.GetMessages(ctx, &api.GetMessagesRequest{
 		UserId:    userIdFake,
 		ProjectId: createChatRequest.GetProjectId(),
 		Limit:     10,

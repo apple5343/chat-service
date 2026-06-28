@@ -6,25 +6,25 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
 
-const timeout = 5
-
-type Suite struct {
-	redis *redis.Client
-	*testing.T
+type RedisClient struct {
+	redis      *redis.Client
 	streamName string
 }
 
-func New(t *testing.T) (context.Context, *Suite) {
-	var redisHost, redisPort, streamName string
+func NewClient(t *testing.T) *RedisClient {
 	t.Helper()
-	redisHost, _ = os.LookupEnv("REDIS_HOST")
-	redisPort, _ = os.LookupEnv("REDIS_PORT")
-	streamName, _ = os.LookupEnv("STREAM_NAME")
+	var redisHost, redisPort, streamName string
+	if err := godotenv.Load("../../test.env"); err != nil {
+		t.Fatal(err)
+	}
+	redisHost = os.Getenv("REDIS_HOST")
+	redisPort = os.Getenv("REDIS_PORT")
+	streamName = os.Getenv("STREAM_NAME")
 	if redisHost == "" || redisPort == "" || streamName == "" {
 		t.Fatal("REDIS_HOST, REDIS_PORT and STREAM_NAME must be set")
 	}
@@ -34,19 +34,14 @@ func New(t *testing.T) (context.Context, *Suite) {
 	if err := client.Ping(context.Background()).Err(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
-	t.Cleanup(func() {
-		t.Helper()
-		cancel()
-	})
-	return ctx, &Suite{
+
+	return &RedisClient{
 		redis:      client,
-		T:          t,
 		streamName: streamName,
 	}
 }
 
-func (s *Suite) SendMessage(ctx context.Context, msg *entity.Message) error {
+func (s *RedisClient) SendMessage(ctx context.Context, msg *entity.Message) error {
 	return s.redis.XAdd(ctx, &redis.XAddArgs{
 		Stream: s.streamName,
 		Values: map[string]string{
