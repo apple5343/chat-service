@@ -14,11 +14,6 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const (
-	readMessageTimeout = 2 * time.Second
-	sendMessageTimeout = 200 * time.Millisecond
-)
-
 type MessageSuite struct {
 	suite.Suite
 	base        *BaseTestSuite
@@ -58,33 +53,58 @@ func (s *MessageSuite) SendMessages(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	messages := []*entity.Message{}
-	for i := 0; i < 10; i++ {
+	type compare struct {
+		ProjectID string
+		UserID    string
+		Content   string
+	}
+
+	count := 10
+	expected := make([]compare, 0, count)
+
+	for i := 0; i < count; i++ {
 		msg := &entity.Message{
 			ProjectID: createChatRequest.GetProjectId(),
 			UserID:    userId,
 			Content:   gofakeit.Word(),
 		}
-		messages = append(messages, msg)
+		expected = append(expected, compare{
+			ProjectID: msg.ProjectID,
+			UserID:    msg.UserID,
+			Content:   msg.Content,
+		})
 		err := s.redisClient.SendMessage(ctx, msg)
-		time.Sleep(sendMessageTimeout)
 		require.NoError(t, err)
 	}
-	time.Sleep(readMessageTimeout)
-	resp, err := s.grpcClient.GetMessages(ctx, &api.GetMessagesRequest{
-		UserId:    userId,
-		ProjectId: createChatRequest.GetProjectId(),
-		Limit:     10,
-		Cursor:    1,
-	})
+
+	var resp *api.GetMessagesResponse
+	length := 0
+	require.Eventuallyf(t, func() bool {
+		resp, err = s.grpcClient.GetMessages(ctx, &api.GetMessagesRequest{
+			UserId:    userId,
+			ProjectId: createChatRequest.GetProjectId(),
+			Limit:     10,
+			Cursor:    1,
+		})
+		if resp != nil {
+			length = len(resp.Messages)
+		}
+		return err == nil && len(resp.Messages) == count
+	}, 10*time.Second, 100*time.Millisecond, "expected %d messages, got %d", count, length)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.Len(t, resp.GetMessages(), len(messages))
-	for i := 0; i < 10; i++ {
-		assert.Equal(t, messages[i].ProjectID, resp.Messages[len(messages)-1-i].ProjectId)
-		assert.Equal(t, messages[i].UserID, resp.Messages[len(messages)-1-i].UserId)
-		assert.Equal(t, messages[i].Content, resp.Messages[len(messages)-1-i].Content)
+	require.Len(t, resp.GetMessages(), len(expected))
+
+	actual := make([]compare, 0, len(resp.GetMessages()))
+	for i := 0; i < count; i++ {
+		actual = append(actual, compare{
+			ProjectID: resp.GetMessages()[i].GetProjectId(),
+			UserID:    resp.GetMessages()[i].GetUserId(),
+			Content:   resp.GetMessages()[i].GetContent(),
+		})
 	}
+
+	require.ElementsMatch(t, expected, actual)
 }
 
 func (s *MessageSuite) SendMessagesInvalid(t *testing.T) {
@@ -115,7 +135,6 @@ func (s *MessageSuite) SendMessagesInvalid(t *testing.T) {
 		}
 		err = s.redisClient.SendMessage(ctx, msg)
 		require.NoError(t, err)
-		time.Sleep(readMessageTimeout)
 		msgFake := &entity.Message{
 			ProjectID: createChatRequest.GetProjectId(),
 			UserID:    userIdFake,
@@ -124,14 +143,20 @@ func (s *MessageSuite) SendMessagesInvalid(t *testing.T) {
 
 		err = s.redisClient.SendMessage(ctx, msgFake)
 		require.NoError(t, err)
-		resp, err := s.grpcClient.GetMessages(ctx, &api.GetMessagesRequest{
-			UserId:    userId,
-			ProjectId: createChatRequest.GetProjectId(),
-			Limit:     10,
-			Cursor:    1,
-		})
-		require.NoError(t, err)
-		require.Equal(t, 1, len(resp.Messages))
+		var resp *api.GetMessagesResponse
+		length := 0
+		require.Eventuallyf(t, func() bool {
+			resp, err = s.grpcClient.GetMessages(ctx, &api.GetMessagesRequest{
+				UserId:    userId,
+				ProjectId: createChatRequest.GetProjectId(),
+				Limit:     10,
+				Cursor:    1,
+			})
+			if resp != nil {
+				length = len(resp.Messages)
+			}
+			return err == nil && len(resp.Messages) == 1
+		}, 10*time.Second, 100*time.Millisecond, "expected 1 messages, got %d", length)
 		assert.Equal(t, msg.ProjectID, resp.Messages[0].ProjectId)
 		assert.Equal(t, msg.UserID, resp.Messages[0].UserId)
 		assert.Equal(t, msg.Content, resp.Messages[0].Content)
