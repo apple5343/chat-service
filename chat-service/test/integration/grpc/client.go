@@ -4,27 +4,21 @@ import (
 	api "chat-service/pkg/api/chat_v1"
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
-	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func NewClient(t *testing.T) api.ChatServiceClient {
-	t.Helper()
-	var grpcHost, grpcPort string
-	if err := godotenv.Load("../../test.env"); err != nil {
-		t.Fatal(err)
-	}
-	grpcHost = os.Getenv("GRPC_HOST")
-	grpcPort = os.Getenv("GRPC_PORT")
-	if grpcHost == "" || grpcPort == "" {
-		t.Fatal("GRPC_HOST and GRPC_PORT must be set")
-	}
+type Config struct {
+	Host string `env:"GRPC_HOST" env-required:"true"`
+	Port string `env:"GRPC_PORT" env-required:"true"`
+}
 
-	cc, err := grpc.DialContext(context.Background(), fmt.Sprintf("%s:%s", grpcHost, grpcPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
+func NewClient(t *testing.T, cfg Config) api.ChatServiceClient {
+	t.Helper()
+
+	cc, err := grpc.DialContext(context.Background(), fmt.Sprintf("%s:%s", cfg.Host, cfg.Port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("grpc server connection failed: %v", err)
 	}

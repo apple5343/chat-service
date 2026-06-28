@@ -4,50 +4,48 @@ import (
 	"chat-service/entity"
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
-	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 )
 
 type RedisClient struct {
-	redis      *redis.Client
-	streamName string
+	redis  *redis.Client
+	config Config
 }
 
-func NewClient(t *testing.T) *RedisClient {
+type Config struct {
+	Host       string `env:"REDIS_HOST" env-required:"true"`
+	Port       string `env:"REDIS_PORT" env-required:"true"`
+	StreamName string `env:"STREAM_NAME" env-required:"true"`
+}
+
+func NewClient(t *testing.T, cfg Config) *RedisClient {
 	t.Helper()
-	var redisHost, redisPort, streamName string
-	if err := godotenv.Load("../../test.env"); err != nil {
-		t.Fatal(err)
-	}
-	redisHost = os.Getenv("REDIS_HOST")
-	redisPort = os.Getenv("REDIS_PORT")
-	streamName = os.Getenv("STREAM_NAME")
-	if redisHost == "" || redisPort == "" || streamName == "" {
-		t.Fatal("REDIS_HOST, REDIS_PORT and STREAM_NAME must be set")
-	}
 	client := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%s", redisHost, redisPort),
+		Addr: fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
 	})
 	if err := client.Ping(context.Background()).Err(); err != nil {
 		t.Fatal(err)
 	}
 
 	return &RedisClient{
-		redis:      client,
-		streamName: streamName,
+		redis:  client,
+		config: cfg,
 	}
 }
 
 func (s *RedisClient) SendMessage(ctx context.Context, msg *entity.Message) error {
 	return s.redis.XAdd(ctx, &redis.XAddArgs{
-		Stream: s.streamName,
+		Stream: s.config.StreamName,
 		Values: map[string]string{
 			"content": msg.Content,
 			"user_id": msg.UserID,
 			"room_id": msg.ProjectID,
 		},
 	}).Err()
+}
+
+func (s *RedisClient) Close() {
+	s.redis.Close()
 }

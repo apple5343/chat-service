@@ -1,7 +1,7 @@
 services:
-  redis:
+  redis-chat-test:
     image: redis:alpine
-    container_name: redis_chat_test
+    container_name: redis-chat-test
     ports:
       - "6379:6379"
     networks:
@@ -12,9 +12,9 @@ services:
       timeout: 5s
       retries: 5
   
-  mongo:
+  mongo-chat-test:
     image: mongo:latest
-    container_name: mongo_chat_test
+    container_name: mongo-chat-test
     ports:
       - "27017:27017"
     networks:
@@ -22,17 +22,17 @@ services:
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
   
-  chat:
+  chat-test:
     build: .
-    container_name: chat_test
+    container_name: chat-test
     env_file:
       - ./test.env
     ports:
       - "50051:50051"
     depends_on:
-      redis:
+      redis-chat-test:
         condition: service_healthy
-      mongo:
+      mongo-chat-test:
         condition: service_healthy
     networks:
       - chat-network-test
