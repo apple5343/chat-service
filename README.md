@@ -24,6 +24,10 @@
   - [Отправка сообщений](#отправка-сообщений)
 - [Процесс добавления пользователя в чат](#процесс-добавления-пользователя-в-чат)
 - [Процесс отправки сообщений](#процесс-отправки-сообщений)
+- [Тестирование](#тестирование)
+  - [Unit-тесты](#unit-тесты)
+  - [Интеграционные тесты](#интеграционные-тесты)
+  - [Структура тестов](#структура-тестов)
 
 
 ## Особенности
@@ -168,3 +172,54 @@ go run example/main.go
 3. Chat Service сохраняет сообщение в БД
 4. Chat Service отправляет сообщение в Redis Pub/Sub
 5. Каждый инстанс Hub получает сообщение из Redis Pub/Sub, проверяет с какими пользователями он связан и отправляет его через WebSocket
+
+## Тестирование
+
+Проект содержит unit и интеграционные тесты.
+
+### Unit-тесты
+
+Покрывают все gRPC-методы: `CreateChat`, `AddUserToChat`, `RemoveUserFromChat`, `GetChat`, `GetUserChats`, `GetMessages`, `GetChatUsers`.
+
+Используют [gomock](https://github.com/golang/mock) для мокирования зависимостей. Проверяют как happy path, так и ошибки (пустые аргументы, `NotFound`, `Forbidden`).
+
+```bash
+cd chat-service
+go test -v ./test/unit/...
+```
+
+### Интеграционные тесты
+
+Проверяют работу сервиса с реальными Redis и MongoDB через [testcontainers-go](https://github.com/testcontainers/testcontainers-go).
+
+Тесты организованы в suites (`ChatSuite`, `UserSuite`, `MessageSuite`) с общей инициализацией в `BaseTestSuite`:
+
+- Перед каждым тестом данные в MongoDB и Redis очищаются, контейнер сервиса перезапускается
+- Асинхронные операции проверяются через `require.Eventually`
+
+```bash
+cd chat-service
+go test -v ./test/integration/...
+```
+
+### Структура тестов
+
+```
+test/
+├── unit/           # Unit-тесты с моками
+│   ├── create_chat_test.go
+│   ├── add_user_test.go
+│   ├── remove_user_test.go
+│   ├── get_chat_test.go
+│   ├── get_chat_users_test.go
+│   ├── get_messages_test.go
+│   └── get_user_chats_test.go
+└── integration/    # Интеграционные тесты с testcontainers
+    ├── init_test.go
+    ├── chat_test.go
+    ├── user_test.go
+    ├── message_test.go
+    ├── grpc/       # gRPC-клиент
+    ├── redis/      # Redis-клиент
+    └── mongo/      # MongoDB-клиент
+```
