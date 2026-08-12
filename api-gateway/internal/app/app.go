@@ -39,8 +39,6 @@ func (a *App) Run() error {
 		closer.Wait()
 	}()
 
-	a.serviceProvider.Hub().Run()
-
 	return a.runHTTPServer()
 }
 

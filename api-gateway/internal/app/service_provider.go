@@ -61,6 +61,7 @@ func newServiceProvider() *serviceProvider {
 func (s *serviceProvider) Hub() *ws.Hub {
 	if s.hub == nil {
 		s.hub = ws.NewHub(s.ChatService())
+		s.hub.Run()
 	}
 	return s.hub
 }

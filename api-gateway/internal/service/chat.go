@@ -27,8 +27,8 @@ func NewChat(rdb *redis.Client) *Chat {
 	}
 }
 
-func (c *Chat) WriteMessage(msg *entity.Message) {
-	_, err := c.rdb.XAdd(c.ctx, &redis.XAddArgs{
+func (c *Chat) WriteMessage(ctx context.Context, msg *entity.Message) error {
+	_, err := c.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: messagesStream,
 		Values: map[string]string{
 			"content": msg.Content,
@@ -36,12 +36,10 @@ func (c *Chat) WriteMessage(msg *entity.Message) {
 			"room_id": msg.RoomID,
 		},
 	}).Result()
-	if err != nil {
-		log.Printf("error: %v", err)
-	}
+	return err
 }
 
-func (c *Chat) ReadMessage(ch chan *entity.Message) {
+func (c *Chat) ReadMessages(ctx context.Context, ch chan *entity.Message) {
 	subscriber := c.rdb.Subscribe(c.ctx, messagesChannel)
 
 	messages := subscriber.Channel()
@@ -59,7 +57,7 @@ func (c *Chat) ReadMessage(ch chan *entity.Message) {
 	}()
 }
 
-func (c *Chat) ReadUpdates(ch chan *entity.Update) {
+func (c *Chat) ReadUpdates(ctx context.Context, ch chan *entity.Update) {
 	subscriber := c.rdb.Subscribe(c.ctx, updatesChannel)
 
 	updates := subscriber.Channel()

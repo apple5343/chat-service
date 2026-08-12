@@ -32,6 +32,7 @@ func main() {
 
 	updatesTransport := redisconsumer.NewUpdatesTransport(rdb)
 	chatRepo := repository.NewChatRepository(&client)
+	chatRepo.EnsureIndexes(context)
 	chatService := service.NewChatService(chatRepo, updatesTransport, rdb)
 
 	redisConsumerCfg := redisconsumer.LoadConfig()

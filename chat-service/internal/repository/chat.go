@@ -240,3 +240,19 @@ func (c *chatRepository) UpdateChat(ctx context.Context, projectID string, chat 
 	}
 	return nil
 }
+
+func (c *chatRepository) EnsureIndexes(ctx context.Context) error {
+	const op = prefix + ".EnsureIndexes"
+
+	_, err := c.db.Collection("chats").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "project_id", Value: 1},
+			{Key: "members", Value: 1},
+		},
+	})
+	if err != nil {
+		return errorz.WrapInternal(err, op)
+	}
+
+	return nil
+}

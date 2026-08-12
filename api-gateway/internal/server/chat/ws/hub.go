@@ -3,117 +3,187 @@ package ws
 import (
 	"api-gateway/internal/entity"
 	"context"
-	"fmt"
+	"log"
+	"sync"
 )
 
 type ChatService interface {
-	WriteMessage(msg *entity.Message)
-	ReadMessage(chan *entity.Message)
-	ReadUpdates(chan *entity.Update)
-}
-
-type Room struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Clients map[string]*Client
+	WriteMessage(context.Context, *entity.Message) error
+	ReadMessages(context.Context, chan *entity.Message)
+	ReadUpdates(context.Context, chan *entity.Update)
 }
 
 type Hub struct {
-	Rooms      map[string]*Room
-	Register   chan *Client
-	Unregister chan *Client
-	Broadcast  chan *entity.Message
-	Send       chan *entity.Message
-	Updates    chan *entity.Update
-	Users      map[string]*Client
-	Chat       ChatService
-	ctx        context.Context
+	rooms         map[string]*Room
+	roomsMu       sync.RWMutex
+	users         map[string]*User
+	usersMu       sync.Mutex
+	messagesInCh  chan *entity.Message
+	messagesOutCh chan *entity.Message
+	updatesCh     chan *entity.Update
+	connectionsWg sync.WaitGroup
+	wg            sync.WaitGroup
+	chat          ChatService
+	ctx           context.Context
+	cancel        func()
 }
 
 func NewHub(chat ChatService) *Hub {
-
-	broadCastch := make(chan *entity.Message, 10)
-	chat.ReadMessage(broadCastch)
-
-	updates := make(chan *entity.Update, 10)
-	chat.ReadUpdates(updates)
-
 	return &Hub{
-		Rooms:      map[string]*Room{},
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
-		Users:      map[string]*Client{},
-		Send:       make(chan *entity.Message),
-		Chat:       chat,
-		Broadcast:  broadCastch,
-		Updates:    updates,
-		ctx:        context.Background(),
-	}
-}
-
-func (h *Hub) Worker(ctx context.Context) {
-	for {
-		select {
-		case cl := <-h.Register:
-			for _, room := range cl.RoomIDs {
-				r, ok := h.Rooms[room]
-				if !ok {
-					r = &Room{
-						ID:      room,
-						Name:    room,
-						Clients: map[string]*Client{},
-					}
-					h.Rooms[room] = r
-				}
-				r.Clients[cl.ID] = cl
-			}
-			h.Users[cl.ID] = cl
-
-		case cl := <-h.Unregister:
-			for _, room := range cl.RoomIDs {
-				r, ok := h.Rooms[room]
-				if !ok {
-					continue
-				}
-				delete(r.Clients, cl.ID)
-			}
-			delete(h.Users, cl.ID)
-
-		case msg := <-h.Broadcast:
-			fmt.Println(msg)
-			room, ok := h.Rooms[msg.RoomID]
-			if !ok {
-				continue
-			}
-			for _, cl := range room.Clients {
-				cl.Updates <- msg
-			}
-
-		case msg := <-h.Send:
-			h.Chat.WriteMessage(msg)
-
-		case <-ctx.Done():
-			return
-		}
+		rooms:         make(map[string]*Room),
+		roomsMu:       sync.RWMutex{},
+		users:         make(map[string]*User),
+		usersMu:       sync.Mutex{},
+		messagesInCh:  make(chan *entity.Message, 2000),
+		messagesOutCh: make(chan *entity.Message, 2000),
+		updatesCh:     make(chan *entity.Update, 2000),
+		connectionsWg: sync.WaitGroup{},
+		wg:            sync.WaitGroup{},
+		chat:          chat,
 	}
 }
 
 func (h *Hub) Run() {
-	for i := 0; i < 10; i++ {
-		go h.Worker(h.ctx)
-		go h.ProcessUpdates()
+	h.ctx, h.cancel = context.WithCancel(context.Background())
+
+	h.wg.Add(5)
+	go func() {
+		defer h.wg.Done()
+		h.chat.ReadMessages(h.ctx, h.messagesInCh)
+	}()
+
+	go func() {
+		defer h.wg.Done()
+		h.chat.ReadUpdates(h.ctx, h.updatesCh)
+	}()
+
+	go func() {
+		defer h.wg.Done()
+		h.ProcessUpdates(h.ctx)
+	}()
+
+	go func() {
+		defer h.wg.Done()
+		h.ProcessMessagesIn(h.ctx)
+	}()
+
+	go func() {
+		defer h.wg.Done()
+		h.ProcessMessagesOut(h.ctx)
+	}()
+}
+
+func (h *Hub) ConnectUser(user *User) {
+	h.usersMu.Lock()
+	if old, ok := h.users[user.id]; ok && old != user {
+		old.CloseConn()
+	}
+	h.users[user.id] = user
+	h.usersMu.Unlock()
+
+	h.roomsMu.RLock()
+	unavailableRooms := []string{}
+	for _, roomID := range user.Rooms() {
+		if room, ok := h.rooms[roomID]; ok {
+			room.AddUser(user)
+		} else {
+			unavailableRooms = append(unavailableRooms, roomID)
+		}
+	}
+	h.roomsMu.RUnlock()
+
+	h.connectionsWg.Add(2)
+
+	go func() {
+		defer h.connectionsWg.Done()
+		user.WritePump()
+	}()
+
+	go func() {
+		defer h.connectionsWg.Done()
+		user.StartRead(h.messagesOutCh)
+		h.DisconnectUser(user)
+	}()
+	if len(unavailableRooms) == 0 {
+		return
+	}
+
+	h.roomsMu.Lock()
+	for _, roomID := range unavailableRooms {
+		room, ok := h.rooms[roomID]
+		if !ok {
+			room = NewRoom(roomID)
+			h.rooms[roomID] = room
+		}
+		room.AddUser(user)
+	}
+	h.roomsMu.Unlock()
+}
+
+func (h *Hub) removeRoom(roomID string) {
+	h.roomsMu.Lock()
+	defer h.roomsMu.Unlock()
+
+	room, ok := h.rooms[roomID]
+	if ok && room.IsEmpty() {
+		delete(h.rooms, roomID)
+	}
+}
+
+func (h *Hub) DisconnectUser(user *User) {
+	h.usersMu.Lock()
+	current, ok := h.users[user.id]
+	if !ok || current != user {
+		h.usersMu.Unlock()
+		return
+	}
+	delete(h.users, user.id)
+	h.usersMu.Unlock()
+	user.CloseConn()
+
+	h.roomsMu.RLock()
+	emptyRooms := []string{}
+	for _, roomID := range user.Rooms() {
+		room, ok := h.rooms[roomID]
+		if !ok {
+			log.Println("room missing")
+			continue
+		}
+		room.RemoveUser(user)
+		if room.IsEmpty() {
+			emptyRooms = append(emptyRooms, roomID)
+		}
+	}
+	h.roomsMu.RUnlock()
+	if len(emptyRooms) == 0 {
+		return
+	}
+
+	h.roomsMu.Lock()
+	defer h.roomsMu.Unlock()
+	for _, roomID := range emptyRooms {
+		room, ok := h.rooms[roomID]
+		if ok && room.IsEmpty() {
+			delete(h.rooms, roomID)
+		}
+	}
+}
+
+func (h *Hub) CleanConnections() {
+	h.usersMu.Lock()
+	defer h.usersMu.Unlock() //Lock не дает подключать новый пользователей
+	for _, user := range h.users {
+		user.CloseConn()
 	}
 }
 
 func (h *Hub) Shutdown() {
-	h.ctx.Done()
-	close(h.Register)
-	close(h.Unregister)
-	close(h.Broadcast)
-	close(h.Send)
-	for _, room := range h.Rooms {
-		for _, cl := range room.Clients {
-			close(cl.Updates)
-		}
+	h.CleanConnections()
+	h.connectionsWg.Wait()
+
+	if h.cancel != nil {
+		h.cancel()
 	}
+
+	h.wg.Wait()
 }

@@ -1,7 +1,12 @@
 package entity
 
+const (
+	UserRemovedUpdate = "user_removed"
+	UserAddedUpdate   = "user_added"
+)
+
 type Message struct {
-	Type    string `json:"type",omitempty,default:"message"`
+	Type    string `json:"type,omitempty"`
 	Content string `json:"content"`
 	RoomID  string `json:"room_id"`
 	UserID  string `json:"user_id"`

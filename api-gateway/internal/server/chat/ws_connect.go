@@ -5,6 +5,7 @@ import (
 	ws "api-gateway/internal/server/chat/ws"
 	chatpb "api-gateway/pkg/api/chat_v1"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -39,9 +40,8 @@ func (h *Handler) JoinRooms(w http.ResponseWriter, r *http.Request) error {
 	userChats, err := h.chatAPIClient.GetUserChats(r.Context(), &chatpb.GetUserChatsRequest{
 		UserId: userID,
 	})
-	fmt.Println("User Chats: ", userChats.GetProjectIds())
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		st, _ := status.FromError(err)
 		switch st.Code() {
 		case codes.NotFound:
@@ -58,16 +58,7 @@ func (h *Handler) JoinRooms(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
-	client := &ws.Client{
-		ID:      userID,
-		Conn:    conn,
-		Updates: make(chan interface{}),
-		RoomIDs: userChats.GetProjectIds(),
-	}
-	fmt.Println(client)
-	h.hub.Register <- client
-	fmt.Println("Client register")
-	go client.ReadMessage(h.hub)
-	go client.WriteUpdates()
+	user := ws.NewUser(userID, conn, userChats.ProjectIds)
+	h.hub.ConnectUser(user)
 	return nil
 }

@@ -33,10 +33,6 @@ func (c *Client) CreateProject(accessToken string, project Project) (string, err
 		return "", fmt.Errorf("invalid status code: %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
-	res := make([]byte, 1000)
-	resp.Body.Read(res)
-	fmt.Println(string(res))
-	return "", fmt.Errorf("efe")
 	var respBody struct {
 		ID string `json:"id"`
 	}

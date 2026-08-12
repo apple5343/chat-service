@@ -50,7 +50,7 @@ func NewChatService(chatRepository ChatRepository, UpdatesTransport UpdatesTrans
 	return &chatService{
 		repo:             chatRepository,
 		updatesTransport: UpdatesTransport,
-		sendCh:           make(chan *entity.Message, 10),
+		sendCh:           make(chan *entity.Message, 2000),
 		rdb:              rdb,
 	}
 }
